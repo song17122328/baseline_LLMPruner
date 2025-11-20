@@ -39,11 +39,11 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     model = LlamaForCausalLM.from_pretrained(
         args.base_model,
-        device_map="auto",
         torch_dtype=torch.float16,
     )
     if args.device != "cpu":
         model.half()
+        model.to(args.device)
 
     if args.test_before_train:
         logger.log("\n==================Generation Results before Pruning================\n")
@@ -65,8 +65,8 @@ def main(args):
                 result = tokenizer.decode(generation_output[0])
                 logger.log(result)
     
-        ppl = PPLMetric(model, tokenizer, ['wikitext2', 'ptb'], args.max_seq_len, device=args.eval_device)
-        logger.log("PPL before pruning: {}".format(ppl))
+    ppl = PPLMetric(model, tokenizer, ['wikitext2', 'ptb'], args.max_seq_len, device=args.eval_device)
+    logger.log("PPL before pruning: {}".format(ppl))
 
     model.to(args.device)
 
@@ -95,6 +95,8 @@ def main(args):
 
     logger.log("Use {} pruner...".format(pruner_type))
     
+    model.config.use_cache = False
+    
     if args.block_wise:
         kwargs = {
             "importance": imp,
@@ -120,6 +122,7 @@ def main(args):
         pruner = tp.pruner.MetaPruner(
             model,
             forward_prompts,
+            output_transform=lambda x: x.logits,
             **kwargs
         )
         model.zero_grad()
@@ -128,7 +131,7 @@ def main(args):
         for i in range(args.iterative_steps):
 
             if pruner_type in ['taylor']:
-                example_prompts = get_examples('bookcorpus', tokenizer, args.num_examples, seq_len = 64).to(args.device)
+                example_prompts = get_examples('c4', tokenizer, args.num_examples, seq_len = 64).to(args.device)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
                 if args.taylor in ['param_mix', 'param_second']:
                     for j in range(args.num_examples):
@@ -192,6 +195,7 @@ def main(args):
         pruner = tp.pruner.MetaPruner(
             model,
             forward_prompts,
+            output_transform=lambda x: x.logits,
             **kwargs
         )
         model.zero_grad()
@@ -200,7 +204,7 @@ def main(args):
         for i in range(args.iterative_steps):
 
             if pruner_type in ['taylor']:
-                example_prompts = get_examples('bookcorpus', tokenizer, 10, seq_len = 64)
+                example_prompts = get_examples('c4', tokenizer, 10, seq_len = 64)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
                 loss = model(example_prompts, labels=example_prompts).loss
                 logger.log("Loss = {}".format(loss))
