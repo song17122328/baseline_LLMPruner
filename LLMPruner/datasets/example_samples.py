@@ -111,10 +111,33 @@ def get_bookcorpus(tokenizer, n_samples, seq_len):
         tokenized_samples.append(tokenized_sample.input_ids[:, i:i+seq_len])
     return torch.cat(tokenized_samples, dim=0 )
 
+
+def get_wiki(tokenizer, n_samples, seq_len):
+    from datasets import load_from_disk
+    traindata = load_from_disk("/newdata/DataSets/wikitext2")['train']
+    traindata = [{'text': item['text']} for item in traindata]
+    dataset_name = "wikitext-2"
+
+    tokenized_samples, history = [], []
+    for _ in range(n_samples):
+        while True:
+            i = random.randint(0, len(traindata) - 1)
+            text = traindata[i]['text'] if isinstance(traindata[i], dict) else traindata[i]
+            tokenized_sample = tokenizer(text, return_tensors='pt')
+            if tokenized_sample.input_ids.shape[1] >= seq_len and i not in history:
+                history.append(i)
+                break
+        i = random.randint(0, tokenized_sample.input_ids.shape[1] - seq_len)
+        tokenized_samples.append(tokenized_sample.input_ids[:, i:i+seq_len])
+    return torch.cat(tokenized_samples, dim=0 )
+
+
 def get_examples(dataset, tokenizer, n_samples, seq_len = 128):
     if dataset == 'c4':
         return get_c4(tokenizer, n_samples, seq_len)
     elif dataset == 'bookcorpus':
         return get_bookcorpus(tokenizer, n_samples, seq_len)
+    elif dataset == 'wikitext2':
+        return get_wiki(tokenizer, n_samples, seq_len)
     else:
         raise NotImplementedError

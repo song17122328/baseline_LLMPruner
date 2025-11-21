@@ -131,7 +131,7 @@ def main(args):
         for i in range(args.iterative_steps):
 
             if pruner_type in ['taylor']:
-                example_prompts = get_examples('c4', tokenizer, args.num_examples, seq_len = 64).to(args.device)
+                example_prompts = get_examples('wikitext2', tokenizer, args.num_examples, seq_len = 64).to(args.device)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
                 if args.taylor in ['param_mix', 'param_second']:
                     for j in range(args.num_examples):
@@ -204,7 +204,7 @@ def main(args):
         for i in range(args.iterative_steps):
 
             if pruner_type in ['taylor']:
-                example_prompts = get_examples('c4', tokenizer, 10, seq_len = 64)
+                example_prompts = get_examples('wikitext2', tokenizer, 10, seq_len = 64)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
                 loss = model(example_prompts, labels=example_prompts).loss
                 logger.log("Loss = {}".format(loss))
