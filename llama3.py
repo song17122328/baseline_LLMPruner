@@ -130,10 +130,28 @@ def main(args):
                 logger.log(f"⚠️  Recommendation: Use conservative pruning_ratio (0.20-0.25)")
                 logger.log(f"⚠️  Or prune MLP-only to avoid attention sensitivity")
 
-        # Always use head_dim for consecutive_groups (not gqa_ratio * head_dim)
-        # The importance alignment mechanism handles GQA ratio automatically
-        consecutive_group_size = model.model.layers[0].self_attn.head_dim
-        logger.log(f"  - consecutive_group_size: {consecutive_group_size} (head_dim)")
+        # Determine whether to use consecutive_groups for attention layers
+        # For models with few KV heads (like Qwen with only 4), consecutive_groups
+        # can cause issues when pruning_ratio is low (n_pruned < consecutive_group_size)
+        # The importance alignment mechanism already maintains GQA ratio automatically
+
+        head_dim = model.model.layers[0].self_attn.head_dim
+        kv_proj_dim = model.model.layers[0].self_attn.k_proj.out_features
+        min_pruned_for_one_head = int(kv_proj_dim * args.pruning_ratio)
+
+        use_consecutive_groups = min_pruned_for_one_head >= head_dim
+
+        if use_consecutive_groups:
+            logger.log(f"  - Using consecutive_groups: {head_dim} (head_dim)")
+            logger.log(f"  - KV proj dim: {kv_proj_dim}, estimated pruned: {min_pruned_for_one_head}")
+            consecutive_groups_dict = {
+                layer.self_attn.k_proj: head_dim for layer in model.model.layers
+            }
+        else:
+            logger.log(f"  ⚠️  Skipping consecutive_groups for attention layers")
+            logger.log(f"  - Reason: pruned dims ({min_pruned_for_one_head}) < head_dim ({head_dim})")
+            logger.log(f"  - The importance alignment mechanism will maintain GQA ratio automatically")
+            consecutive_groups_dict = {}
 
         kwargs = {
             "importance": imp,
@@ -143,9 +161,7 @@ def main(args):
             "ignored_layers":[],
             "channel_groups": {
             },
-            "consecutive_groups": {
-                layer.self_attn.k_proj: consecutive_group_size for layer in model.model.layers
-            },
+            "consecutive_groups": consecutive_groups_dict,
             "customized_pruners": {
                 LlamaRMSNorm: llama_pruner.hf_rmsnorm_pruner,
             },
