@@ -65,8 +65,8 @@ def main(args):
                 result = tokenizer.decode(generation_output[0])
                 logger.log(result)
     
-    ppl = PPLMetric(model, tokenizer, ['wikitext2', 'ptb'], args.max_seq_len, device=args.eval_device)
-    logger.log("PPL before pruning: {}".format(ppl))
+    # ppl = PPLMetric(model, tokenizer, ['wikitext2', 'ptb'], args.max_seq_len, device=args.eval_device)
+    # logger.log("PPL before pruning: {}".format(ppl))
 
     model.to(args.device)
 

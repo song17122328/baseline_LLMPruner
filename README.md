@@ -174,15 +174,35 @@ Please refer to the [Example/Baichuan](https://github.com/horseee/LLM-Pruner/tre
 <summary>Details:</summary>
   
 ```
-python llama3.py --pruning_ratio 0.25 \
+CUDA_VISIBLE_DEVICES=0 python llama3.py --pruning_ratio 0.28 \
                  --device cuda --eval_device cuda \
-                 --base_model meta-llama/Meta-Llama-3-8B-Instruct \
+                 --base_model /newdata/LLMs/Llama-3-8B-Instruct \
                  --block_wise --block_mlp_layer_start 4 --block_mlp_layer_end 30 \
                  --block_attention_layer_start 4 --block_attention_layer_end 30 \
-                 --save_ckpt_log_name llama3_prune \
+                 --save_ckpt_log_name LLM-Pruner_193 \
                  --pruner_type taylor --taylor param_first \
                  --max_seq_len 2048 \
-                 --test_after_train --test_before_train --save_model 
+                 --save_model 
+
+CUDA_VISIBLE_DEVICES=2 python llama3.py --pruning_ratio 0.28 \
+  --device cuda --eval_device cuda \
+  --base_model /newdata/LLMs/Qwen2.5-7B \
+  --block_wise --block_mlp_layer_start 4 --block_mlp_layer_end 30 \
+  --block_attention_layer_start 4 --block_attention_layer_end 30 \
+  --save_ckpt_log_name LLM-Pruner_Qwen_20 \
+  --pruner_type taylor --taylor param_first \
+  --max_seq_len 2048 \
+  --save_model 
+
+CUDA_VISIBLE_DEVICES=2 python llama3.py --pruning_ratio 0.26 \
+  --device cuda --eval_device cuda \
+  --base_model /newdata/LLMs/Mistral-7B-v0.3 \
+  --block_wise --block_mlp_layer_start 4 --block_mlp_layer_end 30 \
+  --block_attention_layer_start 4 --block_attention_layer_end 30 \
+  --save_ckpt_log_name LLM-Pruner_Mistral_20 \
+  --pruner_type taylor --taylor param_first \
+  --max_seq_len 2048 \
+  --save_model 
 ```
 
 </details>
