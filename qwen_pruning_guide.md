@@ -162,7 +162,30 @@ if gqa_ratio >= 7:
 
 ## 故障排除
 
-### 问题1：PPL爆炸 (>1000)
+### 问题1：RuntimeError: torch.cat(): expected a non-empty list of Tensors
+
+**已修复！** 这个错误发生在使用低 pruning_ratio 时。
+
+**原因：**
+```
+Qwen k_proj 维度: 512 (4 KV heads × 128)
+pruning_ratio: 0.20
+n_pruned = 512 × 0.20 = 102
+consecutive_groups: 128
+→ 102 < 128，导致 pruning_groups 为空
+```
+
+**解决方案：**
+- 代码已自动修复，会检测 `n_pruned >= head_dim`
+- 如果不满足，自动跳过 `consecutive_groups`
+- 依赖 importance alignment 机制保持 GQA ratio
+- 现在支持任意 pruning_ratio，包括 < 0.25
+
+**对比：**
+- Llama-3 k_proj: 1024 维 → n_pruned=256 > 128 ✓
+- Qwen k_proj: 512 维 → n_pruned=102 < 128 ✗（已修复）
+
+### 问题2：PPL爆炸 (>1000)
 
 **可能原因：**
 - attention层剪枝过度
@@ -173,7 +196,7 @@ if gqa_ratio >= 7:
 - 减小pruning_ratio
 - 减少attention层剪枝范围
 
-### 问题2：IndexError: index 28 is out of range
+### 问题3：IndexError: index 28 is out of range
 
 **原因：**使用了旧版本代码
 
@@ -182,7 +205,7 @@ if gqa_ratio >= 7:
 git pull origin main
 ```
 
-### 问题3：生成重复文本
+### 问题4：生成重复文本
 
 **可能原因：**
 - attention机制被破坏
