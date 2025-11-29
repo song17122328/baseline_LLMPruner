@@ -37,19 +37,28 @@
 - 对于Llama-3 (4:1 ratio)：8个KV heads，每剪枝128维度 = 剪枝1个KV head
 - 对于Qwen (7:1 ratio)：**4个KV heads**，剪枝后可能破坏GQA ratio
 
-### 3. 剪枝后的维度计算
+### 3. LLM-Pruner的GQA比例保持机制
 
-剪枝后，代码重新计算heads数量：
+**LLM-Pruner通过importance对齐自动保持GQA ratio**（`hf_llama_pruner.py:332-339`）：
+
 ```python
-layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
-layer.self_attn.num_key_value_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
+min_imp_size = min([len(imp) for imp in group_imp])  # Qwen: 512 (K/V维度)
+for imp in group_imp:
+    if len(imp) > min_imp_size and len(imp) % min_imp_size == 0:  # Q的3584 > 512
+        imp = imp.view(len(imp) // min_imp_size, min_imp_size).sum(0)  # (7, 512) -> 512
 ```
 
-**问题：**
-如果K projection被剪枝了奇数个head_dim维度，那么新的GQA ratio可能变成非整数，导致：
-- Attention计算时Q和KV维度不匹配
-- 数值不稳定
-- PPL爆炸
+**工作原理：**
+- Q importance (3584维) reshape成 (7, 512) 然后sum → 512维
+- K/V importance 保持512维
+- 剪枝1个KV head (128维) → Q自动剪枝7个heads (896维)
+- **GQA ratio自动保持7:1不变！**
+
+**那为什么还会PPL爆炸？**
+问题不在于ratio被破坏，而在于：
+1. **KV heads太少**：Qwen只有4个KV heads，剪枝1个就是25%损失！
+2. **GQA ratio高**：7:1意味着每个KV head被7个Q heads共享，影响更大
+3. **剪枝过度**：使用了过高的pruning_ratio或剪枝了太多层
 
 ## 解决方案
 
@@ -89,36 +98,23 @@ CUDA_VISIBLE_DEVICES=2 python llama3.py --pruning_ratio 0.20 \
   --save_model
 ```
 
-### 方案3：修改代码以支持Qwen的GQA ratio（推荐长期方案）
+### 方案3：理解GQA比例保持机制（重要！）
 
-需要修改`llama3.py`中的consecutive_groups设置，使其：
-1. 检测GQA ratio
-2. 根据ratio调整剪枝粒度
-3. 确保剪枝后保持整数ratio
+**好消息**：LLM-Pruner已经内置了GQA ratio保持机制！
 
-#### 修改步骤：
+**关键代码**（`hf_llama_pruner.py:332-339`）会自动：
+1. 检测Q、K、V的维度差异
+2. 将Q的importance reshape并对齐到K/V的维度
+3. 确保剪枝时保持正确的ratio
 
-在`llama3.py`的block_wise部分（第116行附近）添加：
+**因此不需要修改consecutive_groups！**
+- 保持 `consecutive_group_size = head_dim = 128`
+- LLM-Pruner会自动处理7:1的ratio
 
-```python
-# 检测GQA ratio
-config = model.config
-gqa_ratio = config.num_attention_heads / config.num_key_value_heads
-logger.log(f"Detected GQA ratio: {gqa_ratio}:1")
-
-# 对于高GQA ratio的模型，调整剪枝粒度
-if gqa_ratio >= 7:
-    logger.log(f"High GQA ratio detected ({gqa_ratio}:1), adjusting pruning strategy")
-    # 使用更大的粒度以保持GQA ratio
-    consecutive_group_size = int(layer.self_attn.head_dim * gqa_ratio)
-    logger.log(f"Using consecutive_group_size: {consecutive_group_size}")
-else:
-    consecutive_group_size = layer.self_attn.head_dim
-
-"consecutive_groups": {
-    layer.self_attn.k_proj: consecutive_group_size for layer in model.model.layers
-},
-```
+**真正的问题**：
+- Qwen只有4个KV heads，容错空间极小
+- 需要更保守的剪枝策略（方案1或2）
+- 或者只剪枝MLP层
 
 ## 验证方法
 

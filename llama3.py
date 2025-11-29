@@ -113,7 +113,7 @@ def main(args):
             logger.log(f"Adjusting block_mlp_layer_end to {num_layers}")
             args.block_mlp_layer_end = num_layers
 
-        # Detect GQA ratio and adjust pruning strategy
+        # Detect and log GQA configuration
         config = model.config
         if hasattr(config, 'num_attention_heads') and hasattr(config, 'num_key_value_heads'):
             gqa_ratio = config.num_attention_heads / config.num_key_value_heads
@@ -122,20 +122,18 @@ def main(args):
             logger.log(f"  - num_key_value_heads: {config.num_key_value_heads}")
             logger.log(f"  - GQA ratio: {gqa_ratio}:1")
 
-            # For high GQA ratios (>=7), we need to be more careful with pruning
-            # to maintain the correct ratio and avoid breaking attention
+            # Note: LLM-Pruner's importance alignment mechanism (in hf_llama_pruner.py)
+            # automatically maintains GQA ratio by aligning Q/K/V importance tensors
+            # We use head_dim for consecutive_groups to ensure complete head pruning
             if gqa_ratio >= 7:
                 logger.log(f"⚠️  High GQA ratio detected ({gqa_ratio}:1)")
-                logger.log(f"⚠️  Using larger consecutive_group_size to maintain GQA ratio")
-                # Use multiple of head_dim to ensure we prune complete KV head groups
-                consecutive_group_size = model.model.layers[0].self_attn.head_dim * int(gqa_ratio)
-                logger.log(f"  - consecutive_group_size: {consecutive_group_size} (head_dim * {int(gqa_ratio)})")
-            else:
-                consecutive_group_size = model.model.layers[0].self_attn.head_dim
-                logger.log(f"  - consecutive_group_size: {consecutive_group_size} (head_dim)")
-        else:
-            logger.log("Warning: Could not detect GQA configuration, using default head_dim")
-            consecutive_group_size = model.model.layers[0].self_attn.head_dim
+                logger.log(f"⚠️  Recommendation: Use conservative pruning_ratio (0.20-0.25)")
+                logger.log(f"⚠️  Or prune MLP-only to avoid attention sensitivity")
+
+        # Always use head_dim for consecutive_groups (not gqa_ratio * head_dim)
+        # The importance alignment mechanism handles GQA ratio automatically
+        consecutive_group_size = model.model.layers[0].self_attn.head_dim
+        logger.log(f"  - consecutive_group_size: {consecutive_group_size} (head_dim)")
 
         kwargs = {
             "importance": imp,

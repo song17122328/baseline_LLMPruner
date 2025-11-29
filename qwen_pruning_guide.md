@@ -115,18 +115,20 @@ if args.block_attention_layer_end > num_layers:
 
 **效果：**现在可以使用layer_end=30，代码会自动调整为28
 
-### 修改2：GQA ratio感知
+### 修改2：GQA ratio检测和警告
 
 ```python
 gqa_ratio = config.num_attention_heads / config.num_key_value_heads
 if gqa_ratio >= 7:
-    consecutive_group_size = head_dim * int(gqa_ratio)
+    logger.log("⚠️  High GQA ratio detected ({gqa_ratio}:1)")
+    logger.log("⚠️  Recommendation: Use conservative pruning_ratio (0.20-0.25)")
 ```
 
-**效果：**
-- Llama-3 (4:1): consecutive_group_size = 128
-- Qwen (7:1): consecutive_group_size = 896
-- 确保剪枝时保持正确的GQA ratio
+**重要说明：**
+- **LLM-Pruner已经内置GQA ratio保持机制**（通过importance对齐）
+- `consecutive_group_size`始终使用`head_dim=128`
+- 剪枝1个KV head时，Q会自动剪枝7个heads，保持7:1 ratio
+- 高GQA ratio的警告是为了提醒使用更保守的剪枝策略
 
 ## 性能预期
 
