@@ -98,11 +98,26 @@ def main(args):
     model.config.use_cache = False
     
     if args.block_wise:
+        # Auto-detect number of layers and adjust if necessary
+        num_layers = len(model.model.layers)
+        logger.log(f"Detected {num_layers} layers in the model")
+
+        # Adjust layer end parameters if they exceed the actual number of layers
+        if args.block_attention_layer_end > num_layers:
+            logger.log(f"Warning: block_attention_layer_end ({args.block_attention_layer_end}) > num_layers ({num_layers})")
+            logger.log(f"Adjusting block_attention_layer_end to {num_layers}")
+            args.block_attention_layer_end = num_layers
+
+        if args.block_mlp_layer_end > num_layers:
+            logger.log(f"Warning: block_mlp_layer_end ({args.block_mlp_layer_end}) > num_layers ({num_layers})")
+            logger.log(f"Adjusting block_mlp_layer_end to {num_layers}")
+            args.block_mlp_layer_end = num_layers
+
         kwargs = {
             "importance": imp,
             "global_pruning": args.global_pruning,
             "iterative_steps": args.iterative_steps,
-            "ch_sparsity": args.pruning_ratio, 
+            "ch_sparsity": args.pruning_ratio,
             "ignored_layers":[],
             "channel_groups": {
             },
@@ -112,7 +127,7 @@ def main(args):
             "customized_pruners": {
                 LlamaRMSNorm: llama_pruner.hf_rmsnorm_pruner,
             },
-            "root_module_types": None, 
+            "root_module_types": None,
             "root_instances": [model.model.layers[i].self_attn.k_proj for i in range(args.block_attention_layer_start, args.block_attention_layer_end)] +
                               [model.model.layers[i].mlp.gate_proj for i in range(args.block_mlp_layer_start, args.block_mlp_layer_end)]
         }
