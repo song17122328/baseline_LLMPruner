@@ -113,6 +113,30 @@ def main(args):
             logger.log(f"Adjusting block_mlp_layer_end to {num_layers}")
             args.block_mlp_layer_end = num_layers
 
+        # Detect GQA ratio and adjust pruning strategy
+        config = model.config
+        if hasattr(config, 'num_attention_heads') and hasattr(config, 'num_key_value_heads'):
+            gqa_ratio = config.num_attention_heads / config.num_key_value_heads
+            logger.log(f"Detected GQA configuration:")
+            logger.log(f"  - num_attention_heads: {config.num_attention_heads}")
+            logger.log(f"  - num_key_value_heads: {config.num_key_value_heads}")
+            logger.log(f"  - GQA ratio: {gqa_ratio}:1")
+
+            # For high GQA ratios (>=7), we need to be more careful with pruning
+            # to maintain the correct ratio and avoid breaking attention
+            if gqa_ratio >= 7:
+                logger.log(f"⚠️  High GQA ratio detected ({gqa_ratio}:1)")
+                logger.log(f"⚠️  Using larger consecutive_group_size to maintain GQA ratio")
+                # Use multiple of head_dim to ensure we prune complete KV head groups
+                consecutive_group_size = model.model.layers[0].self_attn.head_dim * int(gqa_ratio)
+                logger.log(f"  - consecutive_group_size: {consecutive_group_size} (head_dim * {int(gqa_ratio)})")
+            else:
+                consecutive_group_size = model.model.layers[0].self_attn.head_dim
+                logger.log(f"  - consecutive_group_size: {consecutive_group_size} (head_dim)")
+        else:
+            logger.log("Warning: Could not detect GQA configuration, using default head_dim")
+            consecutive_group_size = model.model.layers[0].self_attn.head_dim
+
         kwargs = {
             "importance": imp,
             "global_pruning": args.global_pruning,
@@ -122,7 +146,7 @@ def main(args):
             "channel_groups": {
             },
             "consecutive_groups": {
-                layer.self_attn.k_proj: layer.self_attn.head_dim for layer in model.model.layers
+                layer.self_attn.k_proj: consecutive_group_size for layer in model.model.layers
             },
             "customized_pruners": {
                 LlamaRMSNorm: llama_pruner.hf_rmsnorm_pruner,
