@@ -10,7 +10,7 @@ from typing import Tuple
 
 import torch
 import numpy as np
-from transformers import LlamaTokenizer, GenerationConfig, LlamaConfig, AutoTokenizer, LlamaForCausalLM
+from transformers import LlamaTokenizer, GenerationConfig, LlamaConfig, AutoTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
 import LLMPruner.torch_pruning as tp 
@@ -37,9 +37,11 @@ def main(args):
     )
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
-    model = LlamaForCausalLM.from_pretrained(
+    # Use AutoModelForCausalLM to automatically detect model type (Llama, Qwen, etc.)
+    model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         torch_dtype=torch.float16,
+        trust_remote_code=True,  # Required for some models like Qwen
     )
     if args.device != "cpu":
         model.half()
@@ -214,10 +216,36 @@ def main(args):
             after_pruning_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
             logger.log("After Iter {}/{}, #parameters: {}".format(i+1, args.iterative_steps, after_pruning_parameters))
         
-            # modify inferece-related attributes
-            for layer in model.model.layers:
-                layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
-                layer.self_attn.num_key_value_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
+            # modify inference-related attributes
+            # Update num_heads based on actual pruned dimensions
+            for layer_idx, layer in enumerate(model.model.layers):
+                pruned_q_dim = layer.self_attn.q_proj.weight.data.shape[0]
+                pruned_k_dim = layer.self_attn.k_proj.weight.data.shape[0]
+
+                new_num_heads = pruned_q_dim // layer.self_attn.head_dim
+                new_num_kv_heads = pruned_k_dim // layer.self_attn.head_dim
+
+                # Update all possible attribute names for compatibility
+                if hasattr(layer.self_attn, 'num_heads'):
+                    layer.self_attn.num_heads = new_num_heads
+                if hasattr(layer.self_attn, 'num_attention_heads'):
+                    layer.self_attn.num_attention_heads = new_num_heads
+                if hasattr(layer.self_attn, 'num_key_value_heads'):
+                    layer.self_attn.num_key_value_heads = new_num_kv_heads
+
+            # Log summary of pruned heads
+            logger.log(f"Updated num_heads after pruning. Example layer 0: num_heads={model.model.layers[0].self_attn.num_heads if hasattr(model.model.layers[0].self_attn, 'num_heads') else 'N/A'}")
+
+            # Update model config to reflect pruned dimensions
+            if hasattr(model.config, 'num_attention_heads'):
+                first_layer_num_heads = model.model.layers[0].self_attn.q_proj.weight.data.shape[0] // model.model.layers[0].self_attn.head_dim
+                model.config.num_attention_heads = first_layer_num_heads
+                logger.log(f"Updated model.config.num_attention_heads: {first_layer_num_heads}")
+
+            if hasattr(model.config, 'num_key_value_heads'):
+                first_layer_num_kv_heads = model.model.layers[0].self_attn.k_proj.weight.data.shape[0] // model.model.layers[0].self_attn.head_dim
+                model.config.num_key_value_heads = first_layer_num_kv_heads
+                logger.log(f"Updated model.config.num_key_value_heads: {first_layer_num_kv_heads}")
 
         # Clean the gradient in the model
         model.zero_grad()
