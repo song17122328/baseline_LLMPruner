@@ -132,28 +132,33 @@ def main(args):
                 logger.log(f"⚠️  Recommendation: Use conservative pruning_ratio (0.20-0.25)")
                 logger.log(f"⚠️  Or prune MLP-only to avoid attention sensitivity")
 
-        # Determine whether to use consecutive_groups for attention layers
-        # For models with few KV heads (like Qwen with only 4), consecutive_groups
-        # can cause issues when pruning_ratio is low (n_pruned < consecutive_group_size)
-        # The importance alignment mechanism already maintains GQA ratio automatically
-
+        # Determine whether attention layers can be pruned safely
+        # For models with few KV heads (like Qwen with only 4), we need at least head_dim
+        # to be pruned to maintain complete head structure
         head_dim = model.model.layers[0].self_attn.head_dim
         kv_proj_dim = model.model.layers[0].self_attn.k_proj.out_features
         min_pruned_for_one_head = int(kv_proj_dim * args.pruning_ratio)
 
-        use_consecutive_groups = min_pruned_for_one_head >= head_dim
+        # Check if we can prune at least one complete head
+        can_prune_attention = min_pruned_for_one_head >= head_dim
 
-        if use_consecutive_groups:
+        if can_prune_attention:
+            logger.log(f"  ✓ Can prune attention layers safely")
             logger.log(f"  - Using consecutive_groups: {head_dim} (head_dim)")
-            logger.log(f"  - KV proj dim: {kv_proj_dim}, estimated pruned: {min_pruned_for_one_head}")
+            logger.log(f"  - KV proj dim: {kv_proj_dim}, will prune: ~{min_pruned_for_one_head} dims")
             consecutive_groups_dict = {
                 layer.self_attn.k_proj: head_dim for layer in model.model.layers
             }
+            attention_root_instances = [model.model.layers[i].self_attn.k_proj
+                                       for i in range(args.block_attention_layer_start, args.block_attention_layer_end)]
         else:
-            logger.log(f"  ⚠️  Skipping consecutive_groups for attention layers")
-            logger.log(f"  - Reason: pruned dims ({min_pruned_for_one_head}) < head_dim ({head_dim})")
-            logger.log(f"  - The importance alignment mechanism will maintain GQA ratio automatically")
+            logger.log(f"  ⚠️  CANNOT prune attention layers safely with current pruning_ratio!")
+            logger.log(f"  - Reason: will prune {min_pruned_for_one_head} dims < head_dim ({head_dim})")
+            logger.log(f"  - This would break attention head structure")
+            logger.log(f"  ⚠️  AUTO-SWITCHING to MLP-only pruning")
+            logger.log(f"  - To prune attention, use pruning_ratio >= {head_dim / kv_proj_dim:.2f}")
             consecutive_groups_dict = {}
+            attention_root_instances = []  # Don't prune attention!
 
         kwargs = {
             "importance": imp,
@@ -168,10 +173,13 @@ def main(args):
                 LlamaRMSNorm: llama_pruner.hf_rmsnorm_pruner,
             },
             "root_module_types": None,
-            "root_instances": [model.model.layers[i].self_attn.k_proj for i in range(args.block_attention_layer_start, args.block_attention_layer_end)] +
+            "root_instances": attention_root_instances +
                               [model.model.layers[i].mlp.gate_proj for i in range(args.block_mlp_layer_start, args.block_mlp_layer_end)]
         }
-        logger.log("Pruning Attention Layer = {}".format(list(range(args.block_attention_layer_start, args.block_attention_layer_end))))
+        if can_prune_attention:
+            logger.log("Pruning Attention Layer = {}".format(list(range(args.block_attention_layer_start, args.block_attention_layer_end))))
+        else:
+            logger.log("Pruning Attention Layer = [] (skipped due to low pruning_ratio)")
         logger.log("Pruning MLP Layer = {}".format(list(range(args.block_mlp_layer_start, args.block_mlp_layer_end))))
 
         pruner = tp.pruner.MetaPruner(
