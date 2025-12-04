@@ -13,6 +13,14 @@ import numpy as np
 from transformers import LlamaTokenizer, GenerationConfig, LlamaConfig, AutoTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
+# Try to import Qwen2 RMSNorm for better compatibility
+try:
+    from transformers.models.qwen2.modeling_qwen2 import Qwen2RMSNorm
+    HAS_QWEN2 = True
+except ImportError:
+    Qwen2RMSNorm = None
+    HAS_QWEN2 = False
+
 import LLMPruner.torch_pruning as tp 
 from LLMPruner.pruner import hf_llama_pruner as llama_pruner
 from LLMPruner.utils.logger import LoggerWithDepth
@@ -171,6 +179,7 @@ def main(args):
             "consecutive_groups": consecutive_groups_dict,
             "customized_pruners": {
                 LlamaRMSNorm: llama_pruner.hf_rmsnorm_pruner,
+                **({Qwen2RMSNorm: llama_pruner.hf_rmsnorm_pruner} if HAS_QWEN2 else {}),
             },
             "root_module_types": None,
             "root_instances": attention_root_instances +
@@ -276,6 +285,7 @@ def main(args):
             },
             "customized_pruners": {
                 LlamaRMSNorm: llama_pruner.hf_rmsnorm_pruner,
+                **({Qwen2RMSNorm: llama_pruner.hf_rmsnorm_pruner} if HAS_QWEN2 else {}),
                 #LlamaAttention: llama_pruner.hf_attention_pruner,
             },
             "root_module_types": [LlamaRMSNorm],
