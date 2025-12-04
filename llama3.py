@@ -21,6 +21,14 @@ except ImportError:
     Qwen2RMSNorm = None
     HAS_QWEN2 = False
 
+# Try to import Mistral RMSNorm
+try:
+    from transformers.models.mistral.modeling_mistral import MistralRMSNorm
+    HAS_MISTRAL = True
+except ImportError:
+    MistralRMSNorm = None
+    HAS_MISTRAL = False
+
 import LLMPruner.torch_pruning as tp 
 from LLMPruner.pruner import hf_llama_pruner as llama_pruner
 from LLMPruner.utils.logger import LoggerWithDepth
@@ -180,6 +188,7 @@ def main(args):
             "customized_pruners": {
                 LlamaRMSNorm: llama_pruner.hf_rmsnorm_pruner,
                 **({Qwen2RMSNorm: llama_pruner.hf_rmsnorm_pruner} if HAS_QWEN2 else {}),
+                **({MistralRMSNorm: llama_pruner.hf_rmsnorm_pruner} if HAS_MISTRAL else {}),
             },
             "root_module_types": None,
             "root_instances": attention_root_instances +
@@ -286,6 +295,7 @@ def main(args):
             "customized_pruners": {
                 LlamaRMSNorm: llama_pruner.hf_rmsnorm_pruner,
                 **({Qwen2RMSNorm: llama_pruner.hf_rmsnorm_pruner} if HAS_QWEN2 else {}),
+                **({MistralRMSNorm: llama_pruner.hf_rmsnorm_pruner} if HAS_MISTRAL else {}),
                 #LlamaAttention: llama_pruner.hf_attention_pruner,
             },
             "root_module_types": [LlamaRMSNorm],
