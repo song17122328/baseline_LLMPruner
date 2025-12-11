@@ -419,11 +419,11 @@ if __name__ == "__main__":
     parser.add_argument('--grouping_strategy', type=str, default='sum', help='Reduce method for grouping')
     parser.add_argument('--global_pruning', action='store_true', help='whether global pruning')
     parser.add_argument('--taylor', type=str, default='param_first', help='choose from [vectorize, param_second, param_first, param_mix]')
-    parser.add_argument('--num_examples', type=int, default=10, help='number of calibration samples')
+    parser.add_argument('--num_examples', type=int, default=128, help='number of calibration samples')
 
     # calibration dataset arguments
     parser.add_argument('--calibration_dataset', type=str, default='c4', help='calibration dataset name (e.g., c4, wikitext2)')
-    parser.add_argument('--calibration_seq_len', type=int, default=64, help='sequence length for calibration samples')
+    parser.add_argument('--calibration_seq_len', type=int, default=2048, help='sequence length for calibration samples')
 
     # general argument
     parser.add_argument('--device', type=str, default="cuda", help='device')
