@@ -214,7 +214,8 @@ def main(args):
             if pruner_type in ['taylor']:
                 example_prompts = get_examples(args.calibration_dataset, tokenizer, args.num_examples, seq_len=args.calibration_seq_len).to(args.device)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
-                logger.log("Using calibration dataset: {}, samples: {}, seq_len: {}".format(args.calibration_dataset, args.num_examples, args.calibration_seq_len))
+                logger.log("Using calibration dataset: {}, samples: {}, seq_len: {}, batch_size: {}".format(
+                    args.calibration_dataset, args.num_examples, args.calibration_seq_len, args.calibration_batch_size))
                 if args.taylor in ['param_mix', 'param_second']:
                     for j in range(args.num_examples):
                         print(j)
@@ -231,10 +232,14 @@ def main(args):
                                 module_param.acc_grad = copy.deepcopy(module_param.grad)
                         model.zero_grad()
                         del loss.grad
-                    
-                loss = model(example_prompts, labels=example_prompts).loss
-                logger.log("Loss = {}".format(loss))
-                loss.backward()
+                else:
+                    # Process calibration data in batches for param_first and other modes
+                    for batch_start in range(0, args.num_examples, args.calibration_batch_size):
+                        batch_end = min(batch_start + args.calibration_batch_size, args.num_examples)
+                        batch_prompts = example_prompts[batch_start:batch_end]
+                        loss = model(batch_prompts, labels=batch_prompts).loss
+                        logger.log("Loss (batch {}-{}/{}) = {}".format(batch_start, batch_end, args.num_examples, loss))
+                        loss.backward()
 
             # 1. Consecutive for grouped KV
             # 2. 
@@ -314,12 +319,17 @@ def main(args):
         for i in range(args.iterative_steps):
 
             if pruner_type in ['taylor']:
-                example_prompts = get_examples(args.calibration_dataset, tokenizer, args.num_examples, seq_len=args.calibration_seq_len)
+                example_prompts = get_examples(args.calibration_dataset, tokenizer, args.num_examples, seq_len=args.calibration_seq_len).to(args.device)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
-                logger.log("Using calibration dataset: {}, samples: {}, seq_len: {}".format(args.calibration_dataset, args.num_examples, args.calibration_seq_len))
-                loss = model(example_prompts, labels=example_prompts).loss
-                logger.log("Loss = {}".format(loss))
-                loss.backward()
+                logger.log("Using calibration dataset: {}, samples: {}, seq_len: {}, batch_size: {}".format(
+                    args.calibration_dataset, args.num_examples, args.calibration_seq_len, args.calibration_batch_size))
+                # Process calibration data in batches
+                for batch_start in range(0, args.num_examples, args.calibration_batch_size):
+                    batch_end = min(batch_start + args.calibration_batch_size, args.num_examples)
+                    batch_prompts = example_prompts[batch_start:batch_end]
+                    loss = model(batch_prompts, labels=batch_prompts).loss
+                    logger.log("Loss (batch {}-{}/{}) = {}".format(batch_start, batch_end, args.num_examples, loss))
+                    loss.backward()
 
             pruner.step()
 
@@ -424,6 +434,7 @@ if __name__ == "__main__":
     # calibration dataset arguments
     parser.add_argument('--calibration_dataset', type=str, default='c4', help='calibration dataset name (e.g., c4, wikitext2)')
     parser.add_argument('--calibration_seq_len', type=int, default=2048, help='sequence length for calibration samples')
+    parser.add_argument('--calibration_batch_size', type=int, default=1, help='batch size for calibration (gradient computation)')
 
     # general argument
     parser.add_argument('--device', type=str, default="cuda", help='device')
