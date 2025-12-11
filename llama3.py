@@ -212,8 +212,9 @@ def main(args):
         for i in range(args.iterative_steps):
 
             if pruner_type in ['taylor']:
-                example_prompts = get_examples('c4', tokenizer, args.num_examples, seq_len = 64).to(args.device)
+                example_prompts = get_examples(args.calibration_dataset, tokenizer, args.num_examples, seq_len=args.calibration_seq_len).to(args.device)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
+                logger.log("Using calibration dataset: {}, samples: {}, seq_len: {}".format(args.calibration_dataset, args.num_examples, args.calibration_seq_len))
                 if args.taylor in ['param_mix', 'param_second']:
                     for j in range(args.num_examples):
                         print(j)
@@ -313,8 +314,9 @@ def main(args):
         for i in range(args.iterative_steps):
 
             if pruner_type in ['taylor']:
-                example_prompts = get_examples('c4', tokenizer, 10, seq_len = 64)
+                example_prompts = get_examples(args.calibration_dataset, tokenizer, args.num_examples, seq_len=args.calibration_seq_len)
                 logger.log("Start Backwarding in iterative steps = {}...".format(i))
+                logger.log("Using calibration dataset: {}, samples: {}, seq_len: {}".format(args.calibration_dataset, args.num_examples, args.calibration_seq_len))
                 loss = model(example_prompts, labels=example_prompts).loss
                 logger.log("Loss = {}".format(loss))
                 loss.backward()
@@ -417,7 +419,11 @@ if __name__ == "__main__":
     parser.add_argument('--grouping_strategy', type=str, default='sum', help='Reduce method for grouping')
     parser.add_argument('--global_pruning', action='store_true', help='whether global pruning')
     parser.add_argument('--taylor', type=str, default='param_first', help='choose from [vectorize, param_second, param_first, param_mix]')
-    parser.add_argument('--num_examples', type=int, default=10)
+    parser.add_argument('--num_examples', type=int, default=10, help='number of calibration samples')
+
+    # calibration dataset arguments
+    parser.add_argument('--calibration_dataset', type=str, default='c4', help='calibration dataset name (e.g., c4, wikitext2)')
+    parser.add_argument('--calibration_seq_len', type=int, default=64, help='sequence length for calibration samples')
 
     # general argument
     parser.add_argument('--device', type=str, default="cuda", help='device')
